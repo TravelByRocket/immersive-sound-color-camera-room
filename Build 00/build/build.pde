@@ -16,7 +16,7 @@ FFT fft;
 AudioIn in;
 int bands = 512; // number of fequency bands; must be a power of 2
 float[] spectrumCurrent = new float[bands];
-float[] spectrumAverage = new float[bands];
+float[] spectrumFiltered = new float[bands];
 float lowPassWeightBar = 0.97;
 float lowPassWeightEllipse = 0.80;
 
@@ -24,10 +24,10 @@ int scaleFactor = 50; // for vertical bar drawing
 int valueGain = 1000; // 1000 appropriate for testing in a coffee shop; lower values need higher volume
 // light whistle has a raw value of about 0.02 and this need to be scales up since the HSV scales are out of 100
 
-float maxSpectrumAverageCurrent;
-float maxSpectrumAverageAverage;
-float maxSpectrumAverageIndexCurrent;
-float maxSpectrumAverageIndexAverage;
+float maxSpectrumFilteredCurrent;
+float maxSpectrumFilteredAverage;
+float maxSpectrumFilteredIndexCurrent;
+float maxSpectrumFilteredIndexAverage;
 
 // VIDEO AND RELATED VARIABLES
 Capture cam;
@@ -79,11 +79,22 @@ void setup() {
 
 void draw() {
   background(40); // dark gray background
+  fft.analyze(spectrumCurrent); // perform FFT and save to spectrumCurrent
+  
+  for(int i = 0; i < bands; i++){
+    // The result of the FFT is normalized
+    // draw the line for frequency band i scaling it up.
+    spectrumFiltered[i] = spectrumFiltered[i]*lowPassWeightBar+spectrumCurrent[i]*(1-lowPassWeightBar); // filter the results
+    stroke(i%100,100,100);
+    line(i,height,i,height - spectrumFiltered[i]*height*scaleFactor);
+    stroke(40,100,100);
+    point(i,height - spectrumCurrent[i]*height*scaleFactor);
+  }
 
   rectMode(CORNERS);
-  fill(maxSpectrumAverageIndexAverage%100,100,100);
+  fill(maxSpectrumFilteredIndexAverage%100,100,100);
   rect(0,0,width/2, height*0.66);
-  fill(maxSpectrumAverageIndexAverage%100, 100, maxSpectrumAverageAverage*valueGain);
+  fill(maxSpectrumFilteredIndexAverage%100, 100, maxSpectrumFilteredAverage*valueGain);
   rect(width/2,0,width, height*0.66);
   
   // SHOW CAMERA IMAGES
@@ -91,10 +102,10 @@ void draw() {
     cam.read();
   }
   imageMode(CENTER);
-  tint(maxSpectrumAverageIndexAverage%100, 100, 100);
+  tint(maxSpectrumFilteredIndexAverage%100, 100, 100);
   image(cam,width/4,height/3,1280/6,720/6);
   //println("maxSpectrumAverageAverage*valueGain: "+maxSpectrumAverageAverage*valueGain);
-  if(maxSpectrumAverageAverage*valueGain > 10 && recordMode == false && frameCount-recordStartFrame > 60*5){ 
+  if(maxSpectrumFilteredAverage*valueGain > 10 && recordMode == false && frameCount-recordStartFrame > 60*5){ 
     // if it is loud enough, and if it is not already recording, and it has been 5 seconds since the last recordStart
     recordMode = true;
     recordStartFrame = frameCount;
@@ -103,37 +114,25 @@ void draw() {
   }
   
   if(recordMode){
-    tint(maxSpectrumAverageIndexAverage%100, 100, 100);
+    tint(maxSpectrumFilteredIndexAverage%100, 100, 100);
     image(cam,width*3/4,height/3,1280/6,720/6);
   }
   
-	fft.analyze(spectrumCurrent); // perform FFT and save to spetrumCurrent
-
-	for(int i = 0; i < bands; i++){
-	  // The result of the FFT is normalized
-	  // draw the line for frequency band i scaling it up.
-		spectrumAverage[i] = spectrumAverage[i]*lowPassWeightBar+spectrumCurrent[i]*(1-lowPassWeightBar);
-	  stroke(i%100,100,100);
-	  line(i,height,i,height - spectrumAverage[i]*height*scaleFactor);
-	  stroke(40,100,100);
-	  point(i,height - spectrumCurrent[i]*height*scaleFactor);
-  }
-
   // GET VALUE AND INDEX OF LOUDEST SPECTRUM BAND
-  maxSpectrumAverageCurrent = max(spectrumAverage);
+  maxSpectrumFilteredCurrent = max(spectrumFiltered);
   for (int j = 0; j < bands; j++) {
-    if (maxSpectrumAverageCurrent == spectrumAverage[j]){
-      maxSpectrumAverageIndexCurrent = j;
+    if (maxSpectrumFilteredCurrent == spectrumFiltered[j]){
+      maxSpectrumFilteredIndexCurrent = j;
     }
   }
 
   // DRAW A LOWPASS-CONTROLLED ELLIPSE AT THE PEAK
-  maxSpectrumAverageIndexAverage = maxSpectrumAverageIndexAverage*lowPassWeightEllipse+maxSpectrumAverageIndexCurrent*(1-lowPassWeightEllipse);
-  maxSpectrumAverageAverage = maxSpectrumAverageAverage*lowPassWeightEllipse/2+maxSpectrumAverageCurrent*(1-lowPassWeightEllipse/2); // dividing by two improves vertical responsiveness
+  maxSpectrumFilteredIndexAverage = maxSpectrumFilteredIndexAverage*lowPassWeightEllipse+maxSpectrumFilteredIndexCurrent*(1-lowPassWeightEllipse);
+  maxSpectrumFilteredAverage = maxSpectrumFilteredAverage*lowPassWeightEllipse/2+maxSpectrumFilteredCurrent*(1-lowPassWeightEllipse/2); // dividing by two improves vertical responsiveness
   stroke(0);
-  fill(maxSpectrumAverageIndexAverage%100,100,100);
+  fill(maxSpectrumFilteredIndexAverage%100,100,100);
   ellipseMode(CENTER);
-  ellipse(maxSpectrumAverageIndexAverage,height - maxSpectrumAverageAverage*height*scaleFactor,10,10);
+  ellipse(maxSpectrumFilteredIndexAverage,height - maxSpectrumFilteredAverage*height*scaleFactor,10,10);
 
   // PRINT FRAMERATE
   fill(0);
@@ -141,17 +140,3 @@ void draw() {
   textAlign(RIGHT,BOTTOM);
   text(round(frameRate)+" fps ",height,width);
 }
-
-//void captureEvent(Capture which) {
-//  if (which == cam){
-//    //println("got the camera");
-//    //cam.read();
-//    //if(recordMode == true){
-//    //  offScreenVid.beginDraw();
-//    //  imageMode(CORNERS);
-//    //  offScreenVid.image(cam,0,0,1280,720);
-//    //  offScreenVid.save("data/capture-"+millis()+".png");
-//    //  offScreenVid.endDraw();
-//    //}
-//  }
-//}
