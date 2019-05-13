@@ -42,80 +42,56 @@ void settings() {
 void setup() {
   frameRate(30);
 	background(40);
-	Sound.list();
-  s = new Sound(this);
-  s.inputDevice(1);
-
-  // Create an Input stream which is routed into the Amplitude analyzer
-  fft = new FFT(this, bands);
-  // get the first audio input channel from sound device
-  in = new AudioIn(this, 0);
-  // start the Audio Input
-  in.start();
-  // patch the AudioIn
-  fft.input(in);
-  // VIDEO SETUP
-  String[] cameras = Capture.list();
-
-  if (cameras.length == 0) {
-    println("There are no cameras available for capture.");
-    exit();
-  } else {
-    println("Available cameras:");
-    for (int i = 0; i < cameras.length; i++) {
-      println(cameras[i]);
-    }
-    
-    // The camera can be initialized directly using an 
-    // element from the array returned by list():
-    cam = new Capture(this, cameras[0]);
-    cam.start();   
-  }  
-
-  // OTHER SETUP
-  colorMode(HSB,100);
-  offScreenVid = createGraphics(1280, 720);
+  colorMode(HSB,360,100,100);
+  soundSetup(); // internal function handling sound setup operations
+	videoSetup(); // "" video ""
 }
 
 void draw() {
   background(40); // dark gray background
-  fft.analyze(spectrumCurrent); // perform FFT and save to spectrumCurrent
   
-  for(int i = 0; i < bands; i++){
-    // The result of the FFT is normalized
-    // draw the line for frequency band i scaling it up.
-    spectrumFiltered[i] = spectrumFiltered[i]*lowPassWeightBar+spectrumCurrent[i]*(1-lowPassWeightBar); // filter the results
-    stroke(i%100,100,100);
-    line(i,height,i,height - spectrumFiltered[i]*height*scaleFactor);
-    stroke(40,100,100);
-    point(i,height - spectrumCurrent[i]*height*scaleFactor);
+  // ANALYZE AND DRAW SPECTRUM
+  fft.analyze(spectrumCurrent); // perform FFT and save to spectrumCurrent
+  for(int i = 0; i < bands; i++){ // for each frequency band
+    spectrumFiltered[i] = spectrumFiltered[i]*lowPassWeightBar+spectrumCurrent[i]*(1-lowPassWeightBar); // filter the FFT results
+    stroke(i%360,100,100); // set the stroke color going around color wheel with full Saturation and Value 
+    line(i,height,i,height - spectrumFiltered[i]*height*scaleFactor); // draw a vertical line from the bottom of the screen indicating the power in each band
+    stroke(280,100,100); // use a purple stroke for points drawn below
+    point(i,height - spectrumCurrent[i]*height*scaleFactor); // draw instantaneous value of each frequency band 
   }
 
-  rectMode(CORNERS);
-  fill(maxSpectrumFilteredIndexAverage%100,100,100);
-  rect(0,0,width/2, height*0.66);
-  fill(maxSpectrumFilteredIndexAverage%100, 100, maxSpectrumFilteredAverage*valueGain);
-  rect(width/2,0,width, height*0.66);
-  
-  // SHOW CAMERA IMAGES
+  // OBTAIN CAMERA IMAGE
   if (cam.available() == true) {
     cam.read();
   }
-  imageMode(CENTER);
-  tint(maxSpectrumFilteredIndexAverage%100, 100, 100);
-  image(cam,width/4,height/3,1280/6,720/6);
-  //println("maxSpectrumAverageAverage*valueGain: "+maxSpectrumAverageAverage*valueGain);
-  if(maxSpectrumFilteredAverage*valueGain > 10 && recordMode == false && frameCount-recordStartFrame > 60*5){ 
-    // if it is loud enough, and if it is not already recording, and it has been 5 seconds since the last recordStart
+  
+  if(maxSpectrumFilteredAverage*valueGain > 10 && recordMode == false && frameCount-recordStartFrame > 150){ 
+    // if it is loud enough, and if it is not already recording, and it has been ## frames seconds since the last recordStart
     recordMode = true;
-    recordStartFrame = frameCount;
-  } else if (recordMode == true && frameCount-recordStartFrame > 60*3) { // if it has been recording for about 3 seconds
+    recordStartFrame = frameCount; // set a new reference for when the recording started
+  } else if (recordMode == true && frameCount-recordStartFrame > 100) { // if it has been recording for ## frames
     recordMode = false; // then stop the recording
   }
   
+  // PREPARE FOR BOX AND IMAGE DRAWING
+  rectMode(CORNERS);
+  imageMode(CORNERS);
+  noStroke();
+  
+  // CONTINUOUS MONITORING SECTION OF VIS
+  fill(maxSpectrumFilteredIndexAverage%360,100,100); // hue determined by loudest band
+  //rect(0,0,width/2, height*0.66); // left half and top two thirds
+  triangle(0,0,width,0,0,height*0.66);
+  tint(maxSpectrumFilteredIndexAverage%360, 100, 100);
+  image(cam,width*0.05,height*0.05,width/2*0.95,height/3*0.95);
+  
+  // EFFECT DEVELOPMENT SECTION OF VIS
+  fill(maxSpectrumFilteredIndexAverage%360, 100, maxSpectrumFilteredAverage*valueGain); // hue determined by loudest band and value from loudness of that band
+  //rect(width/2,0,width, height*0.66); // right half and top two thirds
+  triangle(width,0,width,height*0.66,0,height*0.66);
   if(recordMode){
-    tint(maxSpectrumFilteredIndexAverage%100, 100, 100);
-    image(cam,width*3/4,height/3,1280/6,720/6);
+    tint(maxSpectrumFilteredIndexAverage%360, 100, 100);
+    image(cam,width/2*1.05,height/3*1.05,width*0.95,height*2/3*0.95);
   }
   
   // GET VALUE AND INDEX OF LOUDEST SPECTRUM BAND
@@ -130,13 +106,46 @@ void draw() {
   maxSpectrumFilteredIndexAverage = maxSpectrumFilteredIndexAverage*lowPassWeightEllipse+maxSpectrumFilteredIndexCurrent*(1-lowPassWeightEllipse);
   maxSpectrumFilteredAverage = maxSpectrumFilteredAverage*lowPassWeightEllipse/2+maxSpectrumFilteredCurrent*(1-lowPassWeightEllipse/2); // dividing by two improves vertical responsiveness
   stroke(0);
-  fill(maxSpectrumFilteredIndexAverage%100,100,100);
+  fill(maxSpectrumFilteredIndexAverage%360,100,100);
   ellipseMode(CENTER);
   ellipse(maxSpectrumFilteredIndexAverage,height - maxSpectrumFilteredAverage*height*scaleFactor,10,10);
 
-  // PRINT FRAMERATE
+  // DRAW FRAMERATE
   fill(0);
   textSize(16);
   textAlign(RIGHT,BOTTOM);
   text(round(frameRate)+" fps ",height,width);
+}
+
+void soundSetup(){
+  Sound.list(); // prints list of sound devices
+  s = new Sound(this); // create sound object s
+  s.inputDevice(1); // collect sound from specified input device
+
+  // Create an Input stream which is routed into the Amplitude analyzer
+  fft = new FFT(this, bands);
+  // get the first audio input channel from sound device
+  in = new AudioIn(this, 0); // 1 also works; is this L/R audio?; 0 is default and the second parameter is optional anyway
+  // start the Audio Input
+  in.start();
+  // patch the AudioIn
+  fft.input(in); 
+}
+
+void videoSetup(){
+  String[] cameras = Capture.list();
+  
+  if (cameras.length == 0) {
+    println("There are no cameras available for capture.");
+    exit();
+  } else {
+    println("Available cameras:");
+    for (int i = 0; i < cameras.length; i++) {
+      println(cameras[i]);
+    }
+    // The camera can be initialized directly using an 
+    // element from the array returned by list():
+    cam = new Capture(this, cameras[0]);
+    cam.start();   
+  }
 }
