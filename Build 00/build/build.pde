@@ -31,9 +31,13 @@ float maxSpectrumFilteredIndexAverage;
 
 // VIDEO AND RELATED VARIABLES
 Capture cam;
-boolean recordMode = false;
+boolean recordMode = false; // save images to arraylist only for a set period of time
+boolean writeMode = false; // focus on saving to disc
 int recordStartFrame = -5000; // set well before start of running so there is not a dead time at the beginning
 PGraphics offScreenVid;
+int count = 0; // used to count saved frame number for filenames
+ArrayList<PImage> images = new ArrayList<PImage>();
+int numFramesPerClip = 15;
 
 void settings() {	
   size(600,600);
@@ -65,12 +69,25 @@ void draw() {
     cam.read();
   }
   
+  // SAVE IMAGE TO ARRAYLIST
+  if(recordMode){
+    images.add(cam);
+  }
+  
+  // MANAGE RECORDING AND WRITINGMODE
   if(maxSpectrumFilteredAverage*valueGain > 10 && recordMode == false && frameCount-recordStartFrame > 150){ 
     // if it is loud enough, and if it is not already recording, and it has been ## frames seconds since the last recordStart
     recordMode = true;
     recordStartFrame = frameCount; // set a new reference for when the recording started
-  } else if (recordMode == true && frameCount-recordStartFrame > 100) { // if it has been recording for ## frames
+  } else if (recordMode == true && frameCount-recordStartFrame >= 15) { // if it has been recording for ## frames
     recordMode = false; // then stop the recording
+    writeMode = true;
+    println("recordMode: "+recordMode+" at "+millis());
+    println("writeMode: "+writeMode+" at "+millis());
+  } else if (writeMode == true && images.size() == 0){
+    writeMode = false;
+    count = 0;
+    println("writeMode: "+writeMode+" at "+millis());
   }
   
   // PREPARE FOR BOX AND IMAGE DRAWING
@@ -89,9 +106,10 @@ void draw() {
   fill(maxSpectrumFilteredIndexAverage%360, 100, maxSpectrumFilteredAverage*valueGain); // hue determined by loudest band and value from loudness of that band
   //rect(width/2,0,width, height*0.66); // right half and top two thirds
   triangle(width,0,width,height*0.66,0,height*0.66);
-  if(recordMode){
+  if(recordMode && images.size() > 0){
     tint(maxSpectrumFilteredIndexAverage%360, 100, 100);
-    image(cam,width/2*1.05,height/3*1.05,width*0.95,height*2/3*0.95);
+    //image(cam,width/2*1.05,height/3*1.05,width*0.95,height*2/3*0.95);
+    image(images.get(images.size()-1),width/2*1.05,height/3*1.05,width*0.95,height*2/3*0.95);
   }
   
   // GET VALUE AND INDEX OF LOUDEST SPECTRUM BAND
@@ -109,7 +127,24 @@ void draw() {
   fill(maxSpectrumFilteredIndexAverage%360,100,100);
   ellipseMode(CENTER);
   ellipse(maxSpectrumFilteredIndexAverage,height - maxSpectrumFilteredAverage*height*scaleFactor,10,10);
-
+  
+  // SAVE IMAGES FROM ARRAYLIST TO DISC
+  
+  if (writeMode){
+    fill(0,100,100);
+    textSize(18);
+    textAlign(CENTER,CENTER);
+    text("writing data. "+nf(images.size(),3)+" frames remaining",width/2,height/2);
+    //for (PImage im : images){
+    if (images.size() > 0) {
+      images.get(0).save("data/capture"+nf(count,3)+".png");
+      images.remove(0);
+      count++;
+    } else if (images.size() == 0){ // this doesn't trigger because handled in recording manager section
+      //count = 0; // see above
+    }
+  }
+  
   // DRAW FRAMERATE
   fill(0);
   textSize(16);
@@ -149,3 +184,9 @@ void videoSetup(){
     cam.start();   
   }
 }
+
+//void captureEvent(Capture which){
+//  if(recordMode){
+//    images.add(cam);
+//  }
+//}
