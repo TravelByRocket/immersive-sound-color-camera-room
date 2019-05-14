@@ -1,3 +1,4 @@
+
 //**********************************************************************
 // Program name      : .pde
 // Author            : Bryan Costanza (GitHub: TravelByRocket)
@@ -10,10 +11,21 @@
 import processing.sound.*;
 import processing.video.*;
 
+import ddf.minim.*;
+//import ddf.minim.analysis.*;
+//import ddf.minim.effects.*;
+//import ddf.minim.signals.*;
+//import ddf.minim.spi.*;
+//import ddf.minim.ugens.*;
+
+
 // SOUND AND RELATED VARIABLES
 Sound s;
 FFT fft;
 AudioIn in;
+AudioInput inMinim;
+Minim minim; // from minim (duh)
+AudioRecorder recorder; // from minim
 int bands = 512; // number of fequency bands; must be a power of 2
 float[] spectrumCurrent = new float[bands];
 float[] spectrumFiltered = new float[bands];
@@ -31,8 +43,8 @@ float maxSpectrumFilteredIndexAverage;
 
 // VIDEO AND RELATED VARIABLES
 Capture cam;
-boolean recordMode = false; // save images to arraylist only for a set period of time
-boolean writeMode = false; // focus on saving to disc
+boolean recording = false; // save images to arraylist only for a set period of time
+boolean writingToDisc = false; // focus on saving to disc
 int recordStartFrame = -5000; // set well before start of running so there is not a dead time at the beginning
 PGraphics offScreenVid;
 int count = 0; // used to count saved frame number for filenames
@@ -49,6 +61,7 @@ void setup() {
 	background(40);
   colorMode(HSB,360,100,100);
   soundSetup(); // internal function handling sound setup operations
+  minimSetup();
 	videoSetup(); // "" video ""
 }
 
@@ -71,25 +84,24 @@ void draw() {
   }
   
   // SAVE IMAGE TO ARRAYLIST
-  if(recordMode){
+  if(recording){
     images.add(cam);
   }
   
-  // MANAGE RECORDING AND WRITINGMODE
-  if(maxSpectrumFilteredAverage*valueGain > 10 && recordMode == false && frameCount-recordStartFrame > 150){ 
+  // MANAGE RECORDING AND WRITINGTODISC
+  if(loudEnough() && recording == false && waitEnough()){ 
     // if it is loud enough, and if it is not already recording, and it has been ## frames seconds since the last recordStart
-    recordMode = true;
-    recordStartFrame = frameCount; // set a new reference for when the recording started
-    timeStamp = nf(hour(),2)+"h"+nf(minute(),2)+"m"+nf(second(),2)+"s";
-  } else if (recordMode == true && frameCount-recordStartFrame >= 15) { // if it has been recording for ## frames
-    recordMode = false; // then stop the recording
-    writeMode = true;
-    println("recordMode: "+recordMode+" at "+millis());
-    println("writeMode: "+writeMode+" at "+millis());
-  } else if (writeMode == true && images.size() == 0){
-    writeMode = false;
+    triggerRecordActions(); // moving to function so it can also be triggered by keypress
+  } else if (recording == true && frameCount-recordStartFrame >= 15) { // if it has been recording for ## frames
+    recording = false; // then stop the recording
+    writingToDisc = true;
+    println("recording: "+recording+" at "+millis());
+    println("writingToDisc: "+writingToDisc+" at "+millis());
+    recorder.endRecord(); // for minim
+  } else if (writingToDisc == true && images.size() == 0){
+    writingToDisc = false;
     count = 0;
-    println("writeMode: "+writeMode+" at "+millis());
+    println("writingToDisc: "+writingToDisc+" at "+millis());
   }
   
   // PREPARE FOR BOX AND IMAGE DRAWING
@@ -108,7 +120,7 @@ void draw() {
   fill(maxSpectrumFilteredIndexAverage%360, 100, maxSpectrumFilteredAverage*valueGain); // hue determined by loudest band and value from loudness of that band
   //rect(width/2,0,width, height*0.66); // right half and top two thirds
   triangle(width,0,width,height*0.66,0,height*0.66);
-  if(recordMode && images.size() > 0){
+  if(recording && images.size() > 0){
     tint(maxSpectrumFilteredIndexAverage%360, 100, 100);
     //image(cam,width/2*1.05,height/3*1.05,width*0.95,height*2/3*0.95);
     image(images.get(images.size()-1),width/2*1.05,height/3*1.05,width*0.95,height*2/3*0.95);
@@ -132,7 +144,7 @@ void draw() {
   
   // SAVE IMAGES FROM ARRAYLIST TO DISC
   
-  if (writeMode){
+  if (writingToDisc){
     fill(0,100,100);
     textSize(18);
     textAlign(CENTER,CENTER);
@@ -141,9 +153,7 @@ void draw() {
     if (images.size() > 0) {
       images.get(0).save("data/capture_time"+timeStamp+"_count"+nf(count,3)+".jpg");
       images.remove(0);
-      count++;
-    } else if (images.size() == 0){ // this doesn't trigger because handled in recording manager section
-      //count = 0; // see above
+      count++; // this gets reset in reading and writingtodisc management section
     }
   }
   
@@ -169,6 +179,11 @@ void soundSetup(){
   fft.input(in); 
 }
 
+void minimSetup() {
+  minim = new Minim(this);
+  inMinim = minim.getLineIn(Minim.STEREO, 2048); 
+}
+
 void videoSetup(){
   String[] cameras = Capture.list();
   
@@ -187,8 +202,27 @@ void videoSetup(){
   }
 }
 
-//void captureEvent(Capture which){
-//  if(recordMode){
-//    images.add(cam);
-//  }
-//}
+void triggerRecordActions() {
+  recording = true;
+  recordStartFrame = frameCount; // set a new reference for when the recording started
+  timeStamp = nf(hour(),2)+"h"+nf(minute(),2)+"m"+nf(second(),2)+"s"; 
+  recorder = minim.createRecorder(inMinim, "data/captureaudio_time"+timeStamp+".wav"); // for minim
+  recorder.beginRecord(); // for minim
+}
+
+boolean loudEnough() { // used by sound trigger and key trigger
+  return maxSpectrumFilteredAverage*valueGain > 10; // triggers the recording when filtered volume exceeds value
+}
+
+boolean waitEnough(){ // used by sound trigger and key trigger
+  return frameCount-recordStartFrame > 150; // to prevent continuous triggering and time for saving to disc
+}
+
+void keyPressed() {
+  if (key == 't') {
+    if (recording == false && waitEnough()){ // match the sound-triggered gating in recording and writing management section...
+    // ...but without sound trigger because that is why it is being assigned to a keypress
+      triggerRecordActions();
+    }
+  }
+}
