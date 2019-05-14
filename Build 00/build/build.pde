@@ -38,6 +38,7 @@ PGraphics offScreenVid;
 int count = 0; // used to count saved frame number for filenames
 ArrayList<PImage> images = new ArrayList<PImage>();
 int numFramesPerClip = 15;
+String timeStamp;
 
 void settings() {	
   size(600,600);
@@ -79,6 +80,7 @@ void draw() {
     // if it is loud enough, and if it is not already recording, and it has been ## frames seconds since the last recordStart
     recordMode = true;
     recordStartFrame = frameCount; // set a new reference for when the recording started
+    timeStamp = nf(hour(),2)+"h"+nf(minute(),2)+"m"+nf(second(),2)+"s";
   } else if (recordMode == true && frameCount-recordStartFrame >= 15) { // if it has been recording for ## frames
     recordMode = false; // then stop the recording
     writeMode = true;
@@ -137,7 +139,7 @@ void draw() {
     text("writing data. "+nf(images.size(),3)+" frames remaining",width/2,height/2);
     //for (PImage im : images){
     if (images.size() > 0) {
-      images.get(0).save("data/capture"+nf(count,3)+".png");
+      images.get(0).save("data/capture_time"+timeStamp+"_count"+nf(count,3)+".jpg");
       images.remove(0);
       count++;
     } else if (images.size() == 0){ // this doesn't trigger because handled in recording manager section
