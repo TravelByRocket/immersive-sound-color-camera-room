@@ -47,10 +47,12 @@ boolean recording = false; // save images to arraylist only for a set period of 
 boolean writingToDisc = false; // focus on saving to disc
 int recordStartFrame = -5000; // set well before start of running so there is not a dead time at the beginning
 PGraphics offScreenVid;
-int count = 0; // used to count saved frame number for filenames
+int countCaptured = 0; // used to count saved frame number for filenames
+int countWritten = 0; // used to count saved frame number for filenames
 ArrayList<PImage> images = new ArrayList<PImage>();
 int numFramesPerClip = 15;
 String timeStamp;
+int framesToCapture = 30;
 
 void settings() {	
   size(600,600);
@@ -83,24 +85,25 @@ void draw() {
     cam.read();
   }
   
-  // SAVE IMAGE TO ARRAYLIST
-  if(recording){
-    images.add(cam);
-  }
+  //// SAVE IMAGE TO ARRAYLIST
+  //if(recording){
+  //  images.add(cam);
+  //}
   
   // MANAGE RECORDING AND WRITINGTODISC
   if(loudEnough() && recording == false && waitEnough()){ 
     // if it is loud enough, and if it is not already recording, and it has been ## frames seconds since the last recordStart
     triggerRecordActions(); // moving to function so it can also be triggered by keypress
-  } else if (recording == true && frameCount-recordStartFrame >= 15) { // if it has been recording for ## frames
-    recording = false; // then stop the recording
-    writingToDisc = true;
-    println("recording: "+recording+" at "+millis());
-    println("writingToDisc: "+writingToDisc+" at "+millis());
-    recorder.endRecord(); // for minim
+  } else if (recording == true && frameCount-recordStartFrame >= framesToCapture) { // if it has been recording for ## frames
+    //THIS SECTION HANDLED WITHIN CAPTUREEVENT
+    //recording = false; // then stop the recording
+    //writingToDisc = true;
+    //println("recording: "+recording+" at "+millis());
+    //println("writingToDisc: "+writingToDisc+" at "+millis());
+    //recorder.endRecord(); // for minim
   } else if (writingToDisc == true && images.size() == 0){
     writingToDisc = false;
-    count = 0;
+    countWritten = 0; // reset for next caupter and write session
     println("writingToDisc: "+writingToDisc+" at "+millis());
   }
   
@@ -151,9 +154,10 @@ void draw() {
     text("writing data. "+nf(images.size(),3)+" frames remaining",width/2,height/2);
     //for (PImage im : images){
     if (images.size() > 0) {
-      images.get(0).save("data/capture_time"+timeStamp+"_count"+nf(count,3)+".jpg");
+      images.get(0).save("data/capture_time"+timeStamp+"_count"+nf(countWritten,3)+".jpg");
+      println("saved image "+countWritten+" to disc at "+millis());
       images.remove(0);
-      count++; // this gets reset in reading and writingtodisc management section
+      countWritten++; // this gets reset in reading and writingtodisc management section
     }
   }
   
@@ -162,10 +166,11 @@ void draw() {
   textSize(16);
   textAlign(RIGHT,BOTTOM);
   text(round(frameRate)+" fps ",height,width);
+  
+  if (recording || writingToDisc) saveFrame("data/screen-### at "+millis()+".png");
 }
 
 void soundSetup(){
-  Sound.list(); // prints list of sound devices
   s = new Sound(this); // create sound object s
   s.inputDevice(1); // collect sound from specified input device
 
@@ -181,37 +186,39 @@ void soundSetup(){
 
 void minimSetup() {
   minim = new Minim(this);
-  inMinim = minim.getLineIn(); 
+  inMinim = minim.getLineIn();
+  println("going to call minim.createRecorder(...) at "+millis());
+  recorder = minim.createRecorder(inMinim, "data/captureaudio.wav"); // for minim; this will override
+  println("just called minim.createRecorder(...) at "+millis());
+  //fft = new FFT(inMinim.bufferSize(), inMinim.sampleRate());
 }
 
+String[] cameras;
 void videoSetup(){
-  String[] cameras = Capture.list();
+  cameras = Capture.list();
   
   if (cameras.length == 0) {
     println("There are no cameras available for capture.");
     exit();
-  } else {
-    println("Available cameras:");
-    for (int i = 0; i < cameras.length; i++) {
-      println(cameras[i]);
-    }
-    // The camera can be initialized directly using an 
-    // element from the array returned by list():
-    cam = new Capture(this, cameras[0]);
-    cam.start();   
   }
+  // The camera can be initialized directly using an 
+  // element from the array returned by list():
+  cam = new Capture(this, cameras[0]);
+  cam.start();
 }
 
 void triggerRecordActions() {
+  println("triggerActions() called at "+millis());
+  timeStamp = nf(hour(),2)+"h"+nf(minute(),2)+"m"+nf(second(),2)+"s";
+  println("going to call recorder.beginRecord at "+millis());
+  recorder.beginRecord(); // for minim
+  println("just called recorder.beginRecord at "+millis());
   recording = true;
   recordStartFrame = frameCount; // set a new reference for when the recording started
-  timeStamp = nf(hour(),2)+"h"+nf(minute(),2)+"m"+nf(second(),2)+"s"; 
-  recorder = minim.createRecorder(inMinim, "data/captureaudio_time"+timeStamp+".wav"); // for minim
-  recorder.beginRecord(); // for minim
 }
 
 boolean loudEnough() { // used by sound trigger and key trigger
-  return maxSpectrumFilteredAverage*valueGain > 10; // triggers the recording when filtered volume exceeds value
+  return maxSpectrumFilteredAverage*valueGain > 8; // triggers the recording when filtered volume exceeds value
 }
 
 boolean waitEnough(){ // used by sound trigger and key trigger
@@ -224,5 +231,31 @@ void keyPressed() {
     // ...but without sound trigger because that is why it is being assigned to a keypress
       triggerRecordActions();
     }
+  } else if (key == 'v') { // press 'v' to display video (camera) devices
+    println("Available cameras:");
+    for (int i = 0; i < cameras.length; i++) {
+      println("["+i+"] "+cameras[i]);
+    }
+  } else if (key == 's') { // press 's' to display sound (audio) devices
+    Sound.list(); // prints list of sound devices
+  } else if (key == 'e' || key == 'q') { // q or e buttons to stop
+    exit();
+  }
+}
+
+void captureEvent (Capture c) {
+  if(recording && c == cam){
+    c.read();
+    images.add(c.get());
+    println("captured image "+countCaptured+" to disc at "+millis());
+    countCaptured++;
+  }
+  if (countCaptured >= framesToCapture){
+    countCaptured = 0;
+    recording = false;
+    writingToDisc = true;
+    println("stop recording and start writing at "+millis());
+    recorder.endRecord();
+    println("recorder.endRecord() at "+millis());
   }
 }
