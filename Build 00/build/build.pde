@@ -12,12 +12,9 @@ import processing.sound.*;
 import processing.video.*;
 
 import ddf.minim.*;
-//import ddf.minim.analysis.*;
-//import ddf.minim.effects.*;
-//import ddf.minim.signals.*;
-//import ddf.minim.spi.*;
-//import ddf.minim.ugens.*;
 
+import java.io.FileWriter;
+import java.io.*;
 
 // SOUND AND RELATED VARIABLES
 Sound s;
@@ -52,7 +49,7 @@ int countWritten = 0; // used to count saved frame number for filenames
 ArrayList<PImage> images = new ArrayList<PImage>();
 int numFramesPerClip = 15;
 String timeStamp;
-int framesToCapture = 30;
+int framesToCapture = 60;
 
 void settings() {	
   size(600,600);
@@ -62,9 +59,9 @@ void setup() {
   frameRate(30);
 	background(40);
   colorMode(HSB,360,100,100);
-  soundSetup(); // internal function handling sound setup operations
-  minimSetup();
-	videoSetup(); // "" video ""
+  soundSetup(); // grouping of sound setup tasks
+  minimSetup(); // grouping of minim setup tasks
+	videoSetup(); // grouping of video/camera setup tasks
 }
 
 void draw() {
@@ -79,16 +76,6 @@ void draw() {
     stroke(280,100,100); // use a purple stroke for points drawn below
     point(i,height - spectrumCurrent[i]*height*scaleFactor); // draw instantaneous value of each frequency band 
   }
-
-  // OBTAIN CAMERA IMAGE
-  if (cam.available() == true) {
-    cam.read();
-  }
-  
-  //// SAVE IMAGE TO ARRAYLIST
-  //if(recording){
-  //  images.add(cam);
-  //}
   
   // MANAGE RECORDING AND WRITINGTODISC
   if(loudEnough() && recording == false && waitEnough()){ 
@@ -96,21 +83,20 @@ void draw() {
     triggerRecordActions(); // moving to function so it can also be triggered by keypress
   } else if (recording == true && frameCount-recordStartFrame >= framesToCapture) { // if it has been recording for ## frames
     //THIS SECTION HANDLED WITHIN CAPTUREEVENT
-    //recording = false; // then stop the recording
-    //writingToDisc = true;
-    //println("recording: "+recording+" at "+millis());
-    //println("writingToDisc: "+writingToDisc+" at "+millis());
-    //recorder.endRecord(); // for minim
   } else if (writingToDisc == true && images.size() == 0){
     writingToDisc = false;
-    countWritten = 0; // reset for next caupter and write session
-    println("writingToDisc: "+writingToDisc+" at "+millis());
+    countWritten = 0; // reset for next capture and write session
   }
   
   // PREPARE FOR BOX AND IMAGE DRAWING
   rectMode(CORNERS);
   imageMode(CORNERS);
   noStroke();
+  
+  // OBTAIN CAMERA IMAGE
+  if (cam.available() == true) {
+    cam.read();
+  }
   
   // CONTINUOUS MONITORING SECTION OF VIS
   fill(maxSpectrumFilteredIndexAverage%360,100,100); // hue determined by loudest band
@@ -146,16 +132,13 @@ void draw() {
   ellipse(maxSpectrumFilteredIndexAverage,height - maxSpectrumFilteredAverage*height*scaleFactor,10,10);
   
   // SAVE IMAGES FROM ARRAYLIST TO DISC
-  
   if (writingToDisc){
     fill(0,100,100);
     textSize(18);
     textAlign(CENTER,CENTER);
     text("writing data. "+nf(images.size(),3)+" frames remaining",width/2,height/2);
-    //for (PImage im : images){
-    if (images.size() > 0) {
+    if (images.size() > 0) { // good candidate for running on another thread
       images.get(0).save("data/capture_time"+timeStamp+"_count"+nf(countWritten,3)+".jpg");
-      println("saved image "+countWritten+" to disc at "+millis());
       images.remove(0);
       countWritten++; // this gets reset in reading and writingtodisc management section
     }
@@ -167,7 +150,7 @@ void draw() {
   textAlign(RIGHT,BOTTOM);
   text(round(frameRate)+" fps ",height,width);
   
-  if (recording || writingToDisc) saveFrame("data/screen-### at "+millis()+".png");
+  //if (recording || writingToDisc) saveFrame("data/screen-### at "+millis()+".png");
 }
 
 void soundSetup(){
@@ -175,22 +158,15 @@ void soundSetup(){
   s.inputDevice(1); // collect sound from specified input device
 
   // Create an Input stream which is routed into the Amplitude analyzer
-  fft = new FFT(this, bands);
-  // get the first audio input channel from sound device
+  fft = new FFT(this, bands); // get the first audio input channel from sound device
   in = new AudioIn(this, 0); // 1 also works; is this L/R audio?; 0 is default and the second parameter is optional anyway
-  // start the Audio Input
-  in.start();
-  // patch the AudioIn
-  fft.input(in); 
+  in.start(); // start the Audio Input
+  fft.input(in); // patch the AudioIn
 }
 
 void minimSetup() {
   minim = new Minim(this);
   inMinim = minim.getLineIn();
-  println("going to call minim.createRecorder(...) at "+millis());
-  recorder = minim.createRecorder(inMinim, "data/captureaudio.wav"); // for minim; this will override
-  println("just called minim.createRecorder(...) at "+millis());
-  //fft = new FFT(inMinim.bufferSize(), inMinim.sampleRate());
 }
 
 String[] cameras;
@@ -201,20 +177,17 @@ void videoSetup(){
     println("There are no cameras available for capture.");
     exit();
   }
-  // The camera can be initialized directly using an 
-  // element from the array returned by list():
   cam = new Capture(this, cameras[0]);
   cam.start();
 }
 
 void triggerRecordActions() {
-  println("triggerActions() called at "+millis());
   timeStamp = nf(hour(),2)+"h"+nf(minute(),2)+"m"+nf(second(),2)+"s";
-  println("going to call recorder.beginRecord at "+millis());
+  prepareWavFile();
   recorder.beginRecord(); // for minim
-  println("just called recorder.beginRecord at "+millis());
   recording = true;
   recordStartFrame = frameCount; // set a new reference for when the recording started
+  bashSetup();
 }
 
 boolean loudEnough() { // used by sound trigger and key trigger
@@ -244,18 +217,45 @@ void keyPressed() {
 }
 
 void captureEvent (Capture c) {
-  if(recording && c == cam){
+  if(recording){
     c.read();
     images.add(c.get());
-    println("captured image "+countCaptured+" to disc at "+millis());
     countCaptured++;
   }
   if (countCaptured >= framesToCapture){
-    countCaptured = 0;
-    recording = false;
-    writingToDisc = true;
-    println("stop recording and start writing at "+millis());
+    countCaptured = 0; // reset for next run
+    recording = false; // stop saving images, stop saving audio
+    writingToDisc = true; // start writing images and audio to disc
     recorder.endRecord();
-    println("recorder.endRecord() at "+millis());
+  }
+}
+
+void prepareWavFile(){
+  recorder = minim.createRecorder(inMinim, "data/captureaudio_"+timeStamp+".wav"); // for minim; this will override
+}
+
+// trigger the bashSetup() function when the timeStamp is created
+// guidance from https://forum.processing.org/two/discussion/11883/how-to-append-a-text-to-a-file 
+void bashSetup() { // would make most sense to trigger after recording but it is a fast operation 
+  try {
+    File bashScriptFile = new File(sketchPath()+"/data/makeVideosFFMPEG.sh");
+    
+    if (!bashScriptFile.exists()) {
+      bashScriptFile.createNewFile();
+    }
+ 
+    FileWriter fw = new FileWriter(bashScriptFile, true);///true = append
+    BufferedWriter bw = new BufferedWriter(fw);
+    
+    PrintWriter pw = new PrintWriter(bw);
+    
+    pw.write("ffmpeg -r 30 -f image2 -s 1280x720 -i capture_time"+timeStamp+
+      "_count%03d.jpg -i captureaudio_"+timeStamp+
+      ".wav -vcodec libx264 -crf 25  -pix_fmt yuv420p video_"+timeStamp+".mp4\n");
+    
+    pw.close();
+  } catch(IOException ioe) {
+    System.out.println("Exception ");
+    ioe.printStackTrace();
   }
 }
