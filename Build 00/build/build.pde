@@ -181,7 +181,7 @@ void soundSetup(){
 
 void minimSetup() {
   minim = new Minim(this);
-  inMinim = minim.getLineIn(Minim.STEREO, 2048); 
+  inMinim = minim.getLineIn(); 
 }
 
 void videoSetup(){
