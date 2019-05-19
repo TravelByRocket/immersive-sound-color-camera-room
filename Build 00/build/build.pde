@@ -37,6 +37,7 @@ float maxSpectrumFilteredIndexAverage;
 Capture cam;
 boolean recording = false; // save images to arraylist only for a set period of time
 boolean writingToDisc = false; // focus on saving to disc
+boolean replaying = false;
 int recordStartFrame = -5000; // set well before start of running so there is not a dead time at the beginning
 PGraphics offScreenVid;
 int countCaptured = 0; // used to count saved frame number for filenames
@@ -67,6 +68,7 @@ void setup() {
   colorGradient03 = loadImage("colorGradient03.png");
 }
 
+int replayCount = 0;
 int bandsToShow = 160;
 void draw() {
   //background(maxSpectrumFilteredIndexAverage%360, 100, maxSpectrumFilteredAverage*valueGain*20);
@@ -76,6 +78,7 @@ void draw() {
   fft.analyze(spectrumCurrent); // perform FFT and save to spectrumCurrent
   for(int i = 0; i < bandsToShow; i++){ // for each frequency band, limited to human vocal range 
     spectrumFiltered[i] = spectrumFiltered[i]*lowPassWeightBar+spectrumCurrent[i]*((1-lowPassWeightBar)*(pow(bandsToShow-i,0.5))); // filter the FFT results
+    //println("spectrumFiltered[i]: "+round(spectrumFiltered[i]*1000));
     stroke(0);
     fill(colorGradient01.get((int)map(i,0,bandsToShow,0,colorGradient01.width),25)); //bar color
     //line(i,height,i,height - spectrumFiltered[i]*height*scaleFactor); // draw a vertical line from the bottom of the screen indicating the power in each band
@@ -89,12 +92,10 @@ void draw() {
   }
   
   // MANAGE RECORDING AND WRITINGTODISC
-  if(loudEnough() && recording == false && waitEnough()){ 
-    // if it is loud enough, and if it is not already recording, and it has been ## frames seconds since the last recordStart
+  if(loudEnough() && waitEnough()){ 
     triggerRecordActions(); // moving to function so it can also be triggered by keypress
-  } else if (recording == true && frameCount-recordStartFrame >= framesToCapture) { // if it has been recording for ## frames
-    //THIS SECTION HANDLED WITHIN CAPTUREEVENT
-  } else if (writingToDisc == true && images.size() == 0){
+  }
+  if (writingToDisc == true && images.size() == 0){
     writingToDisc = false;
     countWritten = 0; // reset for next capture and write session
   }
@@ -118,7 +119,16 @@ void draw() {
   // LIVE TRIGGERED VIDEO
   if(recording && images.size() > 0){
     //tint(maxSpectrumFilteredIndexAverage%360, 100, 100);
-    image(images.get(images.size()-1),width/2,height/2,width*0.8,height*0.8);
+    PImage liveImage = images.get(images.size()-1);
+    image(liveImage,width/2,height/2,liveImage.width*0.8,liveImage.height*0.8);
+    noStroke();
+    fill(0,75);
+    rectMode(CENTER);
+    rect(width/2,height/20,width*(((float)(framesToCapture-images.size()+20))/(framesToCapture+20)),height/10);
+    fill(0,0,100);
+    textAlign(CENTER,CENTER);
+    textSize(32);
+    text("Time Left",width/2,height/20);
   }
   
   // GET VALUE AND INDEX OF LOUDEST SPECTRUM BAND
@@ -134,21 +144,39 @@ void draw() {
   maxSpectrumFilteredAverage = maxSpectrumFilteredAverage*lowPassWeightEllipse/2+maxSpectrumFilteredCurrent*(1-lowPassWeightEllipse/2); // dividing by two improves vertical responsiveness
   stroke(0);
   //fill(maxSpectrumFilteredIndexAverage%360,100,100);
-  fill(c); // set the stroke color going around color wheel with full Saturation and Value 
+  fill(colorGradient01.get((int)map(maxSpectrumFilteredIndexAverage,0,bandsToShow,0,colorGradient01.width),25));
   ellipseMode(CENTER);
   float x2 = map(maxSpectrumFilteredIndexAverage+0.5,0,bandsToShow,0,width); // add 0.5 (half and index) to get to center of frequency box
   ellipse(x2,height - maxSpectrumFilteredAverage*height*scaleFactor-10,20,20);
+  
+  // REPLAY VIDEO AFTER RECORDING
+  if (replaying){
+    PImage replayImage = images.get(replayCount); 
+    image(replayImage,width/2,height/2,replayImage.width*0.8,replayImage.height*0.8);
+    replayCount++;
+    if (frameCount % 20 < 14) {
+      fill(0,100,100);
+      textAlign(CENTER,CENTER);
+      textSize(32);
+      text("REPLAY",width/2,height/20);
+    }
+    if (replayCount == framesToCapture){
+      replayCount = 0;
+      replaying = false;
+      writingToDisc = true;
+    }
+  }
   
   // SAVE IMAGES FROM ARRAYLIST TO DISC
   if (writingToDisc){
     noStroke();
     fill(0,75);
     rectMode(CENTER);
-    rect(width/2,height/2,width*(((float)images.size()+10)/(framesToCapture+10)),height/15);
+    rect(width/2,height/20,width*(((float)images.size()+20)/(framesToCapture+20)),height/10);
     fill(255);
-    textSize(18);
+    textSize(32);
     textAlign(CENTER,CENTER);
-    text("Aligning the Stars",width/2,height/2);
+    text("Aligning the Stars",width/2,height/20);
     if (images.size() > 0) { // good candidate for running on another thread
       images.get(0).save("data/capture_time"+timeStamp+"_count"+nf(countWritten,3)+".jpg");
       images.remove(0);
@@ -156,12 +184,11 @@ void draw() {
     }
   }
   
-  // DRAW FRAMERATE
-  fill(0);
-  textSize(16);
-  textAlign(RIGHT,BOTTOM);
-  text(round(frameRate)+" fps ",height,width);
-  
+  //// DRAW FRAMERATE
+  //fill(0);
+  //textSize(16);
+  //textAlign(RIGHT,BOTTOM);
+  //text(round(frameRate)+" fps ",height,width);
 }
 
 // SOUND SETUP
@@ -214,7 +241,7 @@ boolean loudEnough() { // used by sound trigger and key trigger
 }
 
 boolean waitEnough(){ // used by sound trigger and key trigger
-  return !recording && !writingToDisc; // to prevent continuous triggering and time for saving to disc
+  return !recording && !writingToDisc && !replaying; // to prevent continuous triggering and time for saving to disc
 }
 
 void keyPressed() {
@@ -245,7 +272,7 @@ void captureEvent (Capture c) {
   if (countCaptured >= framesToCapture){
     countCaptured = 0; // reset for next run
     recording = false; // stop saving images, stop saving audio
-    writingToDisc = true; // start writing images and audio to disc
+    replaying = true; // start writing images and audio to disc
     recorder.endRecord();
   }
 }
@@ -269,7 +296,7 @@ void bashSetup() { // would make most sense to trigger after recording but it is
     
     PrintWriter pw = new PrintWriter(bw);
     
-    pw.write("ffmpeg -r 30 -f image2 -s 1280x720 -i capture_time"+timeStamp+
+    pw.write("ffmpeg -thread_queue_size 512 -r 30 -f image2 -s 1280x720 -i capture_time"+timeStamp+
       "_count%03d.jpg -i captureaudio_"+timeStamp+
       ".wav -vcodec libx264 -crf 25  -pix_fmt yuv420p video_"+timeStamp+".mp4\n");
     
@@ -283,8 +310,24 @@ void bashSetup() { // would make most sense to trigger after recording but it is
 void filterMagic(){
     PImage modImage = images.get(images.size()-1);
     modImage.loadPixels();
-    for (int i = 0; i < modImage.width*modImage.height; i+=8){
-      modImage.pixels[i] = color(colorGradient01.get((int)map(maxSpectrumFilteredIndexAverage,0,bandsToShow,0,colorGradient01.width),25));
-    }
+    //int version = 2;
+    //if (version == 1){
+    //  for (int i = 0; i < modImage.width*modImage.height; i+=8){
+    //    modImage.pixels[i] = color(colorGradient01.get((int)map(maxSpectrumFilteredIndexAverage,0,bandsToShow,0,colorGradient01.width),25));
+    //  }
+
+      //println("here outside");
+      for (int i = 0; i < bandsToShow; i++){
+        //println("here i");
+        int startIndex = (int)random(modImage.width*modImage.height-10000);
+        //println("startIndex: "+startIndex);
+        //println("startIndex+(int)spectrumFiltered[i]*10000 "+startIndex+(int)spectrumFiltered[i]*10000);
+        for (int j = startIndex; j < startIndex+spectrumFiltered[i]*height*scaleFactor*10; j++){
+          modImage.pixels[j] = color(colorGradient01.get((int)map(i,0,bandsToShow,0,colorGradient01.width),25));
+          //println("here j");
+        }
+      }
+    //}
+    
     modImage.updatePixels();
 }
