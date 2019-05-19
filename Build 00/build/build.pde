@@ -16,16 +16,31 @@ import ddf.minim.*;
 import java.io.FileWriter;
 import java.io.*;
 
+////////////////////////////////////////
+// START EASY-ACCESS VARIABLE AREA
+////////////////////////////////////////
+
+int cameraSelected = 19; // enter the number of the list number of camera you want to use; on May 19, 2019 chose 960x540 at 15 fps 
+int microphoneSelected = 1; //enter the list number of the microphone you want to use
+int scaleFactor = 3; // lower numbers require louder volumes to trigger; top of screen is always trigger point 
+float imageScaling = 1.4; // increase to take up more of the screen with live and replay images
+float secondsToCapture = 5; // 
+String gradientFilename = "colorGradient01.png";
+
+////////////////////////////////////////
+// END EASY-ACCESS VARIABLE AREA
+////////////////////////////////////////
+
 // SOUND AND RELATED VARIABLES
 
-int bands = 1024; // number of fequency bands; must be a power of 2
+int bands = 2048; // number of fequency bands; must be a power of 2
 float[] spectrumCurrent = new float[bands];
 float[] spectrumFiltered = new float[bands];
 float lowPassWeightBar = 0.9;
 float lowPassWeightEllipse = 0.80;
 
-int scaleFactor = 15; // for vertical bar drawing
-int valueGain = 15; // 1000 appropriate for testing in a coffee shop; lower values need higher volume
+
+int valueGain = scaleFactor; // 1000 appropriate for testing in a coffee shop; lower values need higher volume
 // light whistle has a raw value of about 0.02 and this need to be scales up since the HSV scales are out of 100
 
 float maxSpectrumFilteredCurrent;
@@ -45,17 +60,16 @@ int countWritten = 0; // used to count saved frame number for filenames
 ArrayList<PImage> images = new ArrayList<PImage>();
 int numFramesPerClip = 15;
 String timeStamp;
-int framesToCapture = 60;
+int expectedFrameRate = 15;
+int framesToCapture = (int)secondsToCapture*expectedFrameRate;
+PImage colorGradient;
 
 void settings() {	
   //size(600,600);
   fullScreen();
 }
 
-PImage colorGradient01;
-PImage colorGradient02;
-PImage colorGradient03;
-
+color peakColor;
 void setup() {
   frameRate(30);
 	background(40);
@@ -63,32 +77,34 @@ void setup() {
   soundSetup(); // grouping of sound setup tasks
   minimSetup(); // grouping of minim setup tasks
 	videoSetup(); // grouping of video/camera setup tasks
-  colorGradient01 = loadImage("colorGradient01.png");
-  colorGradient02 = loadImage("colorGradient02.png");
-  colorGradient03 = loadImage("colorGradient03.png");
+  colorGradient = loadImage(gradientFilename);
+  peakColor = color(200); //just initialize for first draw loop
 }
 
 int replayCount = 0;
-int bandsToShow = 160;
+int bandsToShow = 270;
+
+float peakHue;
+float peakSat;
+float peakVal;
 void draw() {
   //background(maxSpectrumFilteredIndexAverage%360, 100, maxSpectrumFilteredAverage*valueGain*20);
-  background(colorGradient01.get((int)map(maxSpectrumFilteredIndexAverage,0,bandsToShow,0,colorGradient01.width),25));
+  background(peakColor);
   
   // ANALYZE AND DRAW SPECTRUM
   fft.analyze(spectrumCurrent); // perform FFT and save to spectrumCurrent
   for(int i = 0; i < bandsToShow; i++){ // for each frequency band, limited to human vocal range 
     spectrumFiltered[i] = spectrumFiltered[i]*lowPassWeightBar+spectrumCurrent[i]*((1-lowPassWeightBar)*(pow(bandsToShow-i,0.5))); // filter the FFT results
-    //println("spectrumFiltered[i]: "+round(spectrumFiltered[i]*1000));
     stroke(0);
-    fill(colorGradient01.get((int)map(i,0,bandsToShow,0,colorGradient01.width),25)); //bar color
+    fill(colorGradient.get((int)map(i,0,bandsToShow,0,colorGradient.width),25)); //bar color
     //line(i,height,i,height - spectrumFiltered[i]*height*scaleFactor); // draw a vertical line from the bottom of the screen indicating the power in each band
     float x0 = map(i  ,0,bandsToShow,0,width);
     float x1 = map(i+1,0,bandsToShow,0,width);
     rectMode(CORNERS);
     rect(x0,height,x1,height - spectrumFiltered[i]*height*scaleFactor-1); // draw a vertical bar from the bottom of the screen indicating the power in each band; remove px (make it taller on a -Y axis) to make it a little more visible
-    stroke(280,100,100); // use a purple stroke for points drawn below
-    float x3 = map(i+0.5,0,bandsToShow,0,width);
-    point(x3,height - spectrumCurrent[i]*height*scaleFactor); // draw instantaneous value of each frequency band 
+    //stroke(280,100,100); // use a purple stroke for points drawn below
+    //float x3 = map(i+0.5,0,bandsToShow,0,width);
+    //point(x3,height - spectrumCurrent[i]*height*scaleFactor); // draw instantaneous value of each frequency band 
   }
   
   // MANAGE RECORDING AND WRITINGTODISC
@@ -109,25 +125,17 @@ void draw() {
     cam.read();
   }
   
-  //// CONTINUOUS MONITORING SECTION OF VIS
-  //fill(maxSpectrumFilteredIndexAverage%360,100,100); // hue determined by loudest band
-  ////rect(0,0,width/2, height*0.66); // left half and top two thirds
-  //triangle(0,0,width,0,0,height*0.66);
-  //tint(maxSpectrumFilteredIndexAverage%360, 100, 100);
-  //image(cam,width*0.05,height*0.05,width/2*0.95,height/3*0.95);
-  
   // LIVE TRIGGERED VIDEO
   if(recording && images.size() > 0){
-    //tint(maxSpectrumFilteredIndexAverage%360, 100, 100);
     PImage liveImage = images.get(images.size()-1);
-    image(liveImage,width/2,height/2,liveImage.width*0.8,liveImage.height*0.8);
+    image(liveImage,width/2,height/2,liveImage.width*imageScaling,liveImage.height*imageScaling);
     noStroke();
     fill(0,75);
     rectMode(CENTER);
     rect(width/2,height/20,width*(((float)(framesToCapture-images.size()+20))/(framesToCapture+20)),height/10);
     fill(0,0,100);
     textAlign(CENTER,CENTER);
-    textSize(32);
+    textSize(70);
     text("Time Left",width/2,height/20);
   }
   
@@ -143,22 +151,25 @@ void draw() {
   maxSpectrumFilteredIndexAverage = maxSpectrumFilteredIndexAverage*lowPassWeightEllipse+maxSpectrumFilteredIndexCurrent*(1-lowPassWeightEllipse);
   maxSpectrumFilteredAverage = maxSpectrumFilteredAverage*lowPassWeightEllipse/2+maxSpectrumFilteredCurrent*(1-lowPassWeightEllipse/2); // dividing by two improves vertical responsiveness
   stroke(0);
-  //fill(maxSpectrumFilteredIndexAverage%360,100,100);
-  fill(colorGradient01.get((int)map(maxSpectrumFilteredIndexAverage,0,bandsToShow,0,colorGradient01.width),25));
+  peakColor = colorGradient.get((int)map(maxSpectrumFilteredIndexAverage,0,bandsToShow,0,colorGradient.width),25);
+  peakHue = hue(peakColor);
+  peakSat = saturation(peakColor);
+  peakVal = brightness(peakColor);
+  fill(peakColor);
   ellipseMode(CENTER);
   float x2 = map(maxSpectrumFilteredIndexAverage+0.5,0,bandsToShow,0,width); // add 0.5 (half and index) to get to center of frequency box
-  ellipse(x2,height - maxSpectrumFilteredAverage*height*scaleFactor-10,20,20);
+  ellipse(x2,height - maxSpectrumFilteredAverage*height*scaleFactor-10,30,30);
   
   // REPLAY VIDEO AFTER RECORDING
   if (replaying){
     PImage replayImage = images.get(replayCount); 
-    image(replayImage,width/2,height/2,replayImage.width*0.8,replayImage.height*0.8);
+    image(replayImage,width/2,height/2,replayImage.width*imageScaling,replayImage.height*imageScaling);
     replayCount++;
     if (frameCount % 20 < 14) {
       fill(0,100,100);
       textAlign(CENTER,CENTER);
-      textSize(32);
-      text("REPLAY",width/2,height/20);
+      textSize(70);
+      text("REPLAY",width/2,height*1/3);
     }
     if (replayCount == framesToCapture){
       replayCount = 0;
@@ -174,7 +185,7 @@ void draw() {
     rectMode(CENTER);
     rect(width/2,height/20,width*(((float)images.size()+20)/(framesToCapture+20)),height/10);
     fill(255);
-    textSize(32);
+    textSize(70);
     textAlign(CENTER,CENTER);
     text("Aligning the Stars",width/2,height/20);
     if (images.size() > 0) { // good candidate for running on another thread
@@ -198,7 +209,7 @@ AudioIn in;
 AudioInput inMinim;
 void soundSetup(){
   s = new Sound(this); // create sound object s
-  s.inputDevice(1); // collect sound from specified input device
+  s.inputDevice(microphoneSelected); // collect sound from specified input device
 
   // Create an Input stream which is routed into the Amplitude analyzer
   fft = new FFT(this, bands); // get the first audio input channel from sound device
@@ -223,7 +234,7 @@ void videoSetup(){
     println("There are no cameras available for capture.");
     exit();
   }
-  cam = new Capture(this, cameras[0]);
+  cam = new Capture(this, cameras[cameraSelected]);
   cam.start();
 }
 
@@ -296,7 +307,7 @@ void bashSetup() { // would make most sense to trigger after recording but it is
     
     PrintWriter pw = new PrintWriter(bw);
     
-    pw.write("ffmpeg -thread_queue_size 512 -r 30 -f image2 -s 1280x720 -i capture_time"+timeStamp+
+    pw.write("ffmpeg -thread_queue_size 512 -r 15 -f image2 -s 1280x720 -i capture_time"+timeStamp+
       "_count%03d.jpg -i captureaudio_"+timeStamp+
       ".wav -vcodec libx264 -crf 25  -pix_fmt yuv420p video_"+timeStamp+".mp4\n");
     
@@ -310,24 +321,18 @@ void bashSetup() { // would make most sense to trigger after recording but it is
 void filterMagic(){
     PImage modImage = images.get(images.size()-1);
     modImage.loadPixels();
-    //int version = 2;
-    //if (version == 1){
-    //  for (int i = 0; i < modImage.width*modImage.height; i+=8){
-    //    modImage.pixels[i] = color(colorGradient01.get((int)map(maxSpectrumFilteredIndexAverage,0,bandsToShow,0,colorGradient01.width),25));
-    //  }
-
-      //println("here outside");
-      for (int i = 0; i < bandsToShow; i++){
-        //println("here i");
-        int startIndex = (int)random(modImage.width*modImage.height-10000);
-        //println("startIndex: "+startIndex);
-        //println("startIndex+(int)spectrumFiltered[i]*10000 "+startIndex+(int)spectrumFiltered[i]*10000);
-        for (int j = startIndex; j < startIndex+spectrumFiltered[i]*height*scaleFactor*10; j++){
-          modImage.pixels[j] = color(colorGradient01.get((int)map(i,0,bandsToShow,0,colorGradient01.width),25));
-          //println("here j");
-        }
-      }
+    //tint(peakHue,100,100);
+    //for (int k = 0; k < modImage.width*modImage.height; k++){ // this causes many kinds of memory issues
+      //int bandSat = (int)saturation(modImage.pixels[k]);
+      //int bandVal = (int)brightness(modImage.pixels[k]);
+      //modImage.pixels[k] = color(100,100,100);
     //}
     
+    for (int i = 0; i < bandsToShow; i++){
+      int startIndex = (int)random(modImage.width*modImage.height);
+      for (int j = startIndex; j < constrain(startIndex+spectrumFiltered[i]*height*scaleFactor*2.5,0,modImage.width*modImage.height-1); j++){
+        modImage.pixels[j] = color(colorGradient.get((int)map(i,0,bandsToShow,0,colorGradient.width),25));
+      }
+    }
     modImage.updatePixels();
 }
