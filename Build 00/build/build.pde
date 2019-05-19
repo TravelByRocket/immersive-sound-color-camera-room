@@ -17,20 +17,15 @@ import java.io.FileWriter;
 import java.io.*;
 
 // SOUND AND RELATED VARIABLES
-Sound s;
-FFT fft;
-AudioIn in;
-AudioInput inMinim;
-Minim minim; // from minim (duh)
-AudioRecorder recorder; // from minim
-int bands = 512; // number of fequency bands; must be a power of 2
+
+int bands = 1024; // number of fequency bands; must be a power of 2
 float[] spectrumCurrent = new float[bands];
 float[] spectrumFiltered = new float[bands];
-float lowPassWeightBar = 0.97;
+float lowPassWeightBar = 0.9;
 float lowPassWeightEllipse = 0.80;
 
-int scaleFactor = 50; // for vertical bar drawing
-int valueGain = 1000; // 1000 appropriate for testing in a coffee shop; lower values need higher volume
+int scaleFactor = 15; // for vertical bar drawing
+int valueGain = 15; // 1000 appropriate for testing in a coffee shop; lower values need higher volume
 // light whistle has a raw value of about 0.02 and this need to be scales up since the HSV scales are out of 100
 
 float maxSpectrumFilteredCurrent;
@@ -52,8 +47,13 @@ String timeStamp;
 int framesToCapture = 60;
 
 void settings() {	
-  size(600,600);
+  //size(600,600);
+  fullScreen();
 }
+
+PImage colorGradient01;
+PImage colorGradient02;
+PImage colorGradient03;
 
 void setup() {
   frameRate(30);
@@ -62,19 +62,30 @@ void setup() {
   soundSetup(); // grouping of sound setup tasks
   minimSetup(); // grouping of minim setup tasks
 	videoSetup(); // grouping of video/camera setup tasks
+  colorGradient01 = loadImage("colorGradient01.png");
+  colorGradient02 = loadImage("colorGradient02.png");
+  colorGradient03 = loadImage("colorGradient03.png");
 }
 
+int bandsToShow = 160;
 void draw() {
-  background(40); // dark gray background
+  //background(maxSpectrumFilteredIndexAverage%360, 100, maxSpectrumFilteredAverage*valueGain*20);
+  background(colorGradient01.get((int)map(maxSpectrumFilteredIndexAverage,0,bandsToShow,0,colorGradient01.width),25));
   
   // ANALYZE AND DRAW SPECTRUM
   fft.analyze(spectrumCurrent); // perform FFT and save to spectrumCurrent
-  for(int i = 0; i < bands; i++){ // for each frequency band
-    spectrumFiltered[i] = spectrumFiltered[i]*lowPassWeightBar+spectrumCurrent[i]*(1-lowPassWeightBar); // filter the FFT results
-    stroke(i%360,100,100); // set the stroke color going around color wheel with full Saturation and Value 
-    line(i,height,i,height - spectrumFiltered[i]*height*scaleFactor); // draw a vertical line from the bottom of the screen indicating the power in each band
+  for(int i = 0; i < bandsToShow; i++){ // for each frequency band, limited to human vocal range 
+    spectrumFiltered[i] = spectrumFiltered[i]*lowPassWeightBar+spectrumCurrent[i]*((1-lowPassWeightBar)*(pow(bandsToShow-i,0.5))); // filter the FFT results
+    stroke(0);
+    fill(colorGradient01.get((int)map(i,0,bandsToShow,0,colorGradient01.width),25)); //bar color
+    //line(i,height,i,height - spectrumFiltered[i]*height*scaleFactor); // draw a vertical line from the bottom of the screen indicating the power in each band
+    float x0 = map(i  ,0,bandsToShow,0,width);
+    float x1 = map(i+1,0,bandsToShow,0,width);
+    rectMode(CORNERS);
+    rect(x0,height,x1,height - spectrumFiltered[i]*height*scaleFactor-1); // draw a vertical bar from the bottom of the screen indicating the power in each band; remove px (make it taller on a -Y axis) to make it a little more visible
     stroke(280,100,100); // use a purple stroke for points drawn below
-    point(i,height - spectrumCurrent[i]*height*scaleFactor); // draw instantaneous value of each frequency band 
+    float x3 = map(i+0.5,0,bandsToShow,0,width);
+    point(x3,height - spectrumCurrent[i]*height*scaleFactor); // draw instantaneous value of each frequency band 
   }
   
   // MANAGE RECORDING AND WRITINGTODISC
@@ -89,8 +100,7 @@ void draw() {
   }
   
   // PREPARE FOR BOX AND IMAGE DRAWING
-  rectMode(CORNERS);
-  imageMode(CORNERS);
+  imageMode(CENTER);
   noStroke();
   
   // OBTAIN CAMERA IMAGE
@@ -98,21 +108,17 @@ void draw() {
     cam.read();
   }
   
-  // CONTINUOUS MONITORING SECTION OF VIS
-  fill(maxSpectrumFilteredIndexAverage%360,100,100); // hue determined by loudest band
-  //rect(0,0,width/2, height*0.66); // left half and top two thirds
-  triangle(0,0,width,0,0,height*0.66);
-  tint(maxSpectrumFilteredIndexAverage%360, 100, 100);
-  image(cam,width*0.05,height*0.05,width/2*0.95,height/3*0.95);
+  //// CONTINUOUS MONITORING SECTION OF VIS
+  //fill(maxSpectrumFilteredIndexAverage%360,100,100); // hue determined by loudest band
+  ////rect(0,0,width/2, height*0.66); // left half and top two thirds
+  //triangle(0,0,width,0,0,height*0.66);
+  //tint(maxSpectrumFilteredIndexAverage%360, 100, 100);
+  //image(cam,width*0.05,height*0.05,width/2*0.95,height/3*0.95);
   
-  // EFFECT DEVELOPMENT SECTION OF VIS
-  fill(maxSpectrumFilteredIndexAverage%360, 100, maxSpectrumFilteredAverage*valueGain); // hue determined by loudest band and value from loudness of that band
-  //rect(width/2,0,width, height*0.66); // right half and top two thirds
-  triangle(width,0,width,height*0.66,0,height*0.66);
+  // LIVE TRIGGERED VIDEO
   if(recording && images.size() > 0){
-    tint(maxSpectrumFilteredIndexAverage%360, 100, 100);
-    //image(cam,width/2*1.05,height/3*1.05,width*0.95,height*2/3*0.95);
-    image(images.get(images.size()-1),width/2*1.05,height/3*1.05,width*0.95,height*2/3*0.95);
+    //tint(maxSpectrumFilteredIndexAverage%360, 100, 100);
+    image(images.get(images.size()-1),width/2,height/2,width*0.8,height*0.8);
   }
   
   // GET VALUE AND INDEX OF LOUDEST SPECTRUM BAND
@@ -127,16 +133,22 @@ void draw() {
   maxSpectrumFilteredIndexAverage = maxSpectrumFilteredIndexAverage*lowPassWeightEllipse+maxSpectrumFilteredIndexCurrent*(1-lowPassWeightEllipse);
   maxSpectrumFilteredAverage = maxSpectrumFilteredAverage*lowPassWeightEllipse/2+maxSpectrumFilteredCurrent*(1-lowPassWeightEllipse/2); // dividing by two improves vertical responsiveness
   stroke(0);
-  fill(maxSpectrumFilteredIndexAverage%360,100,100);
+  //fill(maxSpectrumFilteredIndexAverage%360,100,100);
+  fill(c); // set the stroke color going around color wheel with full Saturation and Value 
   ellipseMode(CENTER);
-  ellipse(maxSpectrumFilteredIndexAverage,height - maxSpectrumFilteredAverage*height*scaleFactor,10,10);
+  float x2 = map(maxSpectrumFilteredIndexAverage+0.5,0,bandsToShow,0,width); // add 0.5 (half and index) to get to center of frequency box
+  ellipse(x2,height - maxSpectrumFilteredAverage*height*scaleFactor-10,20,20);
   
   // SAVE IMAGES FROM ARRAYLIST TO DISC
   if (writingToDisc){
-    fill(0,100,100);
+    noStroke();
+    fill(0,75);
+    rectMode(CENTER);
+    rect(width/2,height/2,width*(((float)images.size()+10)/(framesToCapture+10)),height/15);
+    fill(255);
     textSize(18);
     textAlign(CENTER,CENTER);
-    text("writing data. "+nf(images.size(),3)+" frames remaining",width/2,height/2);
+    text("Aligning the Stars",width/2,height/2);
     if (images.size() > 0) { // good candidate for running on another thread
       images.get(0).save("data/capture_time"+timeStamp+"_count"+nf(countWritten,3)+".jpg");
       images.remove(0);
@@ -150,9 +162,13 @@ void draw() {
   textAlign(RIGHT,BOTTOM);
   text(round(frameRate)+" fps ",height,width);
   
-  //if (recording || writingToDisc) saveFrame("data/screen-### at "+millis()+".png");
 }
 
+// SOUND SETUP
+Sound s;
+FFT fft;
+AudioIn in;
+AudioInput inMinim;
 void soundSetup(){
   s = new Sound(this); // create sound object s
   s.inputDevice(1); // collect sound from specified input device
@@ -164,6 +180,9 @@ void soundSetup(){
   fft.input(in); // patch the AudioIn
 }
 
+// MINM SETUP
+Minim minim; // from minim (duh)
+AudioRecorder recorder; // from minim
 void minimSetup() {
   minim = new Minim(this);
   inMinim = minim.getLineIn();
@@ -191,11 +210,11 @@ void triggerRecordActions() {
 }
 
 boolean loudEnough() { // used by sound trigger and key trigger
-  return maxSpectrumFilteredAverage*valueGain > 8; // triggers the recording when filtered volume exceeds value
+  return maxSpectrumFilteredAverage*height*valueGain > height; // triggers the recording when filtered volume exceeds value
 }
 
 boolean waitEnough(){ // used by sound trigger and key trigger
-  return frameCount-recordStartFrame > 150; // to prevent continuous triggering and time for saving to disc
+  return !recording && !writingToDisc; // to prevent continuous triggering and time for saving to disc
 }
 
 void keyPressed() {
@@ -221,6 +240,7 @@ void captureEvent (Capture c) {
     c.read();
     images.add(c.get());
     countCaptured++;
+    filterMagic();
   }
   if (countCaptured >= framesToCapture){
     countCaptured = 0; // reset for next run
@@ -258,4 +278,13 @@ void bashSetup() { // would make most sense to trigger after recording but it is
     System.out.println("Exception ");
     ioe.printStackTrace();
   }
+}
+
+void filterMagic(){
+    PImage modImage = images.get(images.size()-1);
+    modImage.loadPixels();
+    for (int i = 0; i < modImage.width*modImage.height; i+=8){
+      modImage.pixels[i] = color(colorGradient01.get((int)map(maxSpectrumFilteredIndexAverage,0,bandsToShow,0,colorGradient01.width),25));
+    }
+    modImage.updatePixels();
 }
