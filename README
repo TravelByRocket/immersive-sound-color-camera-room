@@ -1,0 +1,11 @@
+Download and unzip to your Downloads folder
+Open the folder and navigate to Build 00 or Build 01 depending on what you need
+Double-click and click "Run" within Processing
+If it is not full screen then make sure the display is being mirrored
+If there is an error it is likely ffrom a bad camera or microphone index
+There are scripts that list the microphone and camera sources in this download
+Match the input source numbers with the easy-access variables at the top of each build.pde file
+When the event is done, open Terminal and navigate to the data folder with this command:
+	cd Downloads/immersive-sound-color-camera-room-master/Build\ 00/build/data/
+Then run FFMPEG to create the videos from the pictures and audio with this command:
+	bash makeVideosFFMPEG.sh
